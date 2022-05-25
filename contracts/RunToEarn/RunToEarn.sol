@@ -7,80 +7,62 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../NFT/ShoesNFT.sol";
+import "../Reserve/Reserve.sol";
 
-contract RunToEarn is Ownable, ShoesNFT {
+contract RuntoEarn is Ownable {
     using Counters for Counters.Counter;
-    Counters.Counter private _shoesTypeIdCount;
-    Counters.Counter private _shoesIdCount;
-
+    Counters.Counter private _accountIdCount;
     IERC20 public immutable tokenVIE;
     IERC721 public immutable shoesNFT;
-    IERC721 public immutable gemNFT;
+    Reserve public immutable reserve;
+    address public reserveAddress;
 
-    event ShoesType(
-        uint256 indexed shoesTypeId,
-        uint256 price,
-        bytes32 indexed name,
-        uint256 tokenEarn,
-        bool isOffline
-    );
+    event StartRun(uint256 startTime, address indexed runner, uint256 shoesId);
+    event EndRun(uint256 endTime, address indexed runner, uint256 shoesId);
 
     constructor(
         address _tokenVIE,
         address _shoesNFT,
-        address _gemNFT
+        address _reserveAddress
     ) {
         tokenVIE = IERC20(_tokenVIE);
         shoesNFT = IERC721(_shoesNFT);
-        gemNFT = IERC721(_gemNFT);
+        reserve = Reserve(_reserveAddress);
+        reserveAddress = _reserveAddress;
     }
 
-    // Declare shoes variable.
-    // tokenEarn: the number of tokens earned per 10 km.
-    struct ShoesInfo {
-        uint256 price;
-        bytes32 name;
-        uint256 tokenEarn;
-        bool isOffline;
-    }
+    mapping(address => mapping(uint256 => uint256)) public distance;
+    mapping(address => mapping(uint256 => bool)) public isStart;
 
-    mapping(uint256 => ShoesInfo) public shoesTypes;
-    mapping(uint256 => mapping(uint256 => ShoesInfo)) public shoes;
-
-    function createShoesType(
-        uint256 _price,
-        bytes32 _name,
-        uint256 _tokenEarn
-    ) external onlyOwner {
-        _shoesTypeIdCount.increment();
-        uint256 _shoesTypeId = _shoesTypeIdCount.current();
-        ShoesInfo storage shoesType = shoesTypes[_shoesTypeId];
-        shoesType.price = _price;
-        shoesType.name = _name;
-        shoesType.tokenEarn = _tokenEarn;
-
-        emit ShoesType(_shoesTypeId, _price, _name, _tokenEarn, false);
-    }
-
-    function removeShoesType(uint256 _shoesTypeId) external onlyOwner {
+    function startRun(uint256 _shoesId) external {
         require(
-            _shoesTypeId <= _shoesTypeIdCount.current(),
-            "RTE: shoesTypeId not exist"
+            shoesNFT.ownerOf(_shoesId) == _msgSender(),
+            "RTE: Not your shoes"
         );
-        ShoesInfo storage shoesType = shoesTypes[_shoesTypeId];
-        require(shoesType.isOffline == false, "RTE: shoesTypeId is offline");
-        shoesType.isOffline = true;
+        distance[_msgSender()][_shoesId] = 0;
+        isStart[_msgSender()][_shoesId] = true;
+
+        emit StartRun(block.timestamp, _msgSender(), _shoesId);
     }
 
-    function buyShoes(uint256 _shoesTypeId) external {
+    function endRun(uint256 _shoesId, uint256 _distance) external {
         require(
-            _shoesTypeId <= _shoesTypeIdCount.current(),
-            "RTE: shoesTypeId not exist"
+            isStart[_msgSender()][_shoesId],
+            "RTE: Your run have not started yet"
         );
-        ShoesInfo storage shoesType = shoesTypes[_shoesTypeId];
-        require(shoesType.isOffline == false, "RTE: shoesTypeId is offline");
-        _shoesIdCount.increment();
-        uint256 _shoesId = _shoesIdCount.current();
-        shoesNFT.mint(_msgSender(), _shoesId);
+        isStart[_msgSender()][_shoesId] = false;
+        if(_distance > )
+        distance[_msgSender()][_shoesId] += _distance;
+        
+
+        emit EndRun(block.timestamp, _msgSender(), _shoesId);
+    }
+
+    function claimReward(uint256 _shoesId) external {
+        require(
+            shoesNFT.ownerOf(_shoesId) == _msgSender(),
+            "RTE: Not your shoes"
+        );
+        
     }
 }

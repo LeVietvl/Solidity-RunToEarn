@@ -27,6 +27,7 @@ contract ShoesNFT is ERC721, Ownable {
         uint256 price,
         bytes32 indexed name,
         uint256 tokenEarn,
+        uint256 duration,
         bool isOffline
     );
 
@@ -34,26 +35,29 @@ contract ShoesNFT is ERC721, Ownable {
         uint256 price;
         bytes32 name;
         uint256 tokenEarn;
+        uint256 duration;
         bool isOffline;
     }
 
     ShoesInfo[] public shoesTypes;
-    mapping(uint256 => uint256) public shoes;
+    mapping(uint256 => ShoesInfo) public shoes;
 
     function createShoesType(
         uint256 _price,
         bytes32 _name,
-        uint256 _tokenEarn
+        uint256 _tokenEarn,
+        uint256 _duration
     ) external onlyOwner {
         ShoesInfo memory shoesType = ShoesInfo(
             _price,
             _name,
             _tokenEarn,
+            _duration,
             false
         );
         shoesTypes.push(shoesType);
 
-        emit ShoesType(_price, _name, _tokenEarn, false);
+        emit ShoesType(_price, _name, _tokenEarn, _duration, false);
     }
 
     function removeShoesType(uint256 _shoesTypeId) external onlyOwner {
@@ -84,5 +88,55 @@ contract ShoesNFT is ERC721, Ownable {
         _shoesIdCount.increment();
         uint256 _shoesId = _shoesIdCount.current();
         _mint(_msgSender(), _shoesId);
+        ShoesInfo storage shoe = shoes[_shoesId];
+        shoe.price = shoesType.price;
+        shoe.name = shoesType.name;
+        shoe.tokenEarn = shoesType.tokenEarn;
+        shoe.duration = shoesType.duration;
+        shoe.isOffline = shoesType.isOffline;
+    }
+
+    event StartRun(uint256 startTime, address indexed runner, uint256 shoesId);
+    event EndRun(
+        uint256 endTime,
+        address indexed runner,
+        uint256 shoesId,
+        uint256 distance
+    );
+
+    mapping(address => mapping(uint256 => uint256)) public distance;
+    mapping(address => mapping(uint256 => bool)) public isStart;
+
+    function startRun(uint256 _shoesId) external {
+        require(ownerOf(_shoesId) == _msgSender(), "RTE: Not your shoes");
+        require(
+            shoes[_shoesId].duration > 0,
+            "RTE: Your shoes is not safe for run"
+        );
+        distance[_msgSender()][_shoesId] = 0;
+        isStart[_msgSender()][_shoesId] = true;
+
+        emit StartRun(block.timestamp, _msgSender(), _shoesId);
+    }
+
+    function endRun(uint256 _shoesId, uint256 _distance) external {
+        require(
+            isStart[_msgSender()][_shoesId],
+            "RTE: Your run have not started yet"
+        );
+        isStart[_msgSender()][_shoesId] = false;
+        ShoesInfo storage shoe = shoes[_shoesId];
+        if (_distance > shoe.duration) {
+            distance[_msgSender()][_shoesId] += shoe.duration;
+            shoe.duration = 0;
+        } else {
+            shoes[_shoesId].duration -= _distance;
+            distance[_msgSender()][_shoesId] += _distance;
+        }
+        emit EndRun(block.timestamp, _msgSender(), _shoesId, _distance);
+    }
+
+    function claimReward(uint256 _shoesId) external {
+        require(ownerOf(_shoesId) == _msgSender(), "RTE: Not your shoes");
     }
 }
