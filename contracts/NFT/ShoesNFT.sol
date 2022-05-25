@@ -38,7 +38,7 @@ contract ShoesNFT is ERC721, Ownable {
     }
 
     ShoesInfo[] public shoesTypes;
-    mapping(uint256 => ShoesInfo) public shoes;
+    mapping(uint256 => uint256) public shoes;
 
     function createShoesType(
         uint256 _price,
@@ -80,12 +80,9 @@ contract ShoesNFT is ERC721, Ownable {
             "ShoesNFT: shoesTypeId is offline"
         );
 
-        tokenVIE.transferFrom(
-            _msgSender(),
-            address(reserveAddress),
-            shoesType.price
-        );
+        tokenVIE.transferFrom(_msgSender(), reserveAddress, shoesType.price);
         _shoesIdCount.increment();
         uint256 _shoesId = _shoesIdCount.current();
+        _mint(_msgSender(), _shoesId);
     }
 }

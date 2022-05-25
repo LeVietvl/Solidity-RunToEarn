@@ -75,16 +75,16 @@ contract TokenSale is Ownable {
         reserve.distributeToken(_msgSender(), amountToken);
     }
 
-    function sell(uint256 amountToken) public payable {
+    function sell(uint256 _amountToken) public payable {
         require(
-            contributions[msg.sender] >= amountToken,
+            contributions[msg.sender] >= _amountToken,
             "TokenSale: Your contribution do not have enough token"
         );
-        uint256 fee = _calculateFee(amountToken);
-        uint256 ethAmount = (amountToken - fee) / rate;
+        uint256 fee = _calculateFee(_amountToken);
+        uint256 ethAmount = (_amountToken - fee) / rate;
 
-        contributions[msg.sender] -= amountToken;
-        tokenVIE.transferFrom(_msgSender(), reserveAddress, amountToken);
+        contributions[msg.sender] -= _amountToken;
+        tokenVIE.transferFrom(_msgSender(), reserveAddress, _amountToken);
         payable(msg.sender).transfer(ethAmount);
     }
 }
