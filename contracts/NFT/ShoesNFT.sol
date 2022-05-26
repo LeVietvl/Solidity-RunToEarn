@@ -11,6 +11,7 @@ import "../Reserve/Reserve.sol";
 contract ShoesNFT is ERC721, Ownable {
     using Counters for Counters.Counter;
     Counters.Counter private _shoesIdCount;
+    Counters.Counter private _shoesTypeIdCount;
     IERC20 public immutable tokenVIE;
     Reserve public immutable reserve;
     address public reserveAddress;
@@ -24,6 +25,7 @@ contract ShoesNFT is ERC721, Ownable {
     }
 
     event ShoesType(
+        uint256 shoesTypeId,
         uint256 price,
         bytes32 indexed name,
         uint256 tokenEarn,
@@ -32,6 +34,7 @@ contract ShoesNFT is ERC721, Ownable {
     );
 
     struct ShoesInfo {
+        uint256 shoesTypeId;
         uint256 price;
         bytes32 name;
         uint256 tokenEarn;
@@ -49,6 +52,7 @@ contract ShoesNFT is ERC721, Ownable {
         uint256 _duration
     ) external onlyOwner {
         ShoesInfo memory shoesType = ShoesInfo(
+            _shoesTypeIdCount.current(),
             _price,
             _name,
             _tokenEarn,
@@ -56,8 +60,16 @@ contract ShoesNFT is ERC721, Ownable {
             false
         );
         shoesTypes.push(shoesType);
+        _shoesTypeIdCount.increment();
 
-        emit ShoesType(_price, _name, _tokenEarn, _duration, false);
+        emit ShoesType(
+            _shoesTypeIdCount.current(),
+            _price,
+            _name,
+            _tokenEarn,
+            _duration,
+            false
+        );
     }
 
     function removeShoesType(uint256 _shoesTypeId) external onlyOwner {
@@ -89,6 +101,7 @@ contract ShoesNFT is ERC721, Ownable {
         uint256 _shoesId = _shoesIdCount.current();
         _mint(_msgSender(), _shoesId);
         ShoesInfo storage shoe = shoes[_shoesId];
+        shoe.shoesTypeId = shoesType.shoesTypeId;
         shoe.price = shoesType.price;
         shoe.name = shoesType.name;
         shoe.tokenEarn = shoesType.tokenEarn;
@@ -103,8 +116,18 @@ contract ShoesNFT is ERC721, Ownable {
         uint256 shoesId,
         uint256 distance
     );
+    event ClaimReward(
+        address indexed runner,
+        uint256 tokenReward,
+        uint256 distanceReward,
+        uint256 time
+    );
 
-    mapping(address => mapping(uint256 => uint256)) public distance;
+    mapping(address => mapping(uint256 => uint256)) public totalDistance;
+    mapping(address => mapping(uint256 => uint256)) public rewarDistance;
+    mapping(address => mapping(uint256 => uint256))
+        public specialRepairDistance;
+    mapping(address => uint256) public totalTokenReward;
     mapping(address => mapping(uint256 => bool)) public isStart;
 
     function startRun(uint256 _shoesId) external {
@@ -113,7 +136,6 @@ contract ShoesNFT is ERC721, Ownable {
             shoes[_shoesId].duration > 0,
             "RTE: Your shoes is not safe for run"
         );
-        distance[_msgSender()][_shoesId] = 0;
         isStart[_msgSender()][_shoesId] = true;
 
         emit StartRun(block.timestamp, _msgSender(), _shoesId);
@@ -124,19 +146,109 @@ contract ShoesNFT is ERC721, Ownable {
             isStart[_msgSender()][_shoesId],
             "RTE: Your run have not started yet"
         );
+
         isStart[_msgSender()][_shoesId] = false;
         ShoesInfo storage shoe = shoes[_shoesId];
         if (_distance > shoe.duration) {
-            distance[_msgSender()][_shoesId] += shoe.duration;
+            totalDistance[_msgSender()][_shoesId] += shoe.duration;
+            rewarDistance[_msgSender()][_shoesId] += shoe.duration;
+            specialRepairDistance[_msgSender()][_shoesId] += shoe.duration;
             shoe.duration = 0;
         } else {
             shoes[_shoesId].duration -= _distance;
-            distance[_msgSender()][_shoesId] += _distance;
+            totalDistance[_msgSender()][_shoesId] += _distance;
+            rewarDistance[_msgSender()][_shoesId] += _distance;
+            specialRepairDistance[_msgSender()][_shoesId] += _distance;
         }
         emit EndRun(block.timestamp, _msgSender(), _shoesId, _distance);
     }
 
-    function claimReward(uint256 _shoesId) external {
+    function claimReward(uint256 _shoesId, uint256 _distanceClaim) external {
         require(ownerOf(_shoesId) == _msgSender(), "RTE: Not your shoes");
+        require(rewarDistance[_msgSender()][_shoesId] > 0, "RTE: No distance");
+        require(
+            _distanceClaim > 0,
+            "RTE: Distance claim must be greater than 0"
+        );
+        require(
+            _distanceClaim <= rewarDistance[_msgSender()][_shoesId],
+            "RTE: Distance claim must not be greater than distance reward"
+        );
+
+        ShoesInfo storage shoe = shoes[_shoesId];
+        uint256 tokenReward = shoe.tokenEarn * _distanceClaim;
+        rewarDistance[_msgSender()][_shoesId] -= _distanceClaim;
+        totalTokenReward[_msgSender()] += tokenReward;
+        reserve.distributeToken(_msgSender(), tokenReward);
+
+        emit ClaimReward(
+            _msgSender(),
+            tokenReward,
+            _distanceClaim,
+            block.timestamp
+        );
+    }
+
+    event RepairFeeUpdate(uint256 repairFee);
+    event RequiredSpecialRepairDistanceUpdate(
+        uint256 shoesId,
+        uint256 repairFee
+    );
+    uint256 public repairFee;
+    uint256 public requiredSpecialRepairDistance;
+
+    function updateRepairFee(uint256 _repairFee) external onlyOwner {
+        require(_repairFee >= 0, "RTE: bad repair fee");
+        repairFee = _repairFee;
+
+        emit RepairFeeUpdate(_repairFee);
+    }
+
+    function updateRequiredSpecialRepairDistance(
+        uint256 _shoesId,
+        uint256 _requiredSpecialRepairDistance
+    ) external onlyOwner {
+        require(
+            _requiredSpecialRepairDistance > 0,
+            "RTE: bad required special repair distance"
+        );
+        requiredSpecialRepairDistance = _requiredSpecialRepairDistance;
+
+        emit RequiredSpecialRepairDistanceUpdate(
+            _shoesId,
+            _requiredSpecialRepairDistance
+        );
+    }
+
+    function claimSpecialRepairPromo(uint256 _shoesId) external {
+        require(ownerOf(_shoesId) == _msgSender(), "RTE: Not your shoes");
+        require(
+            specialRepairDistance[_msgSender()][_shoesId] >=
+                requiredSpecialRepairDistance,
+            "RTE: Not enough distance to claim"
+        );
+        specialRepairDistance[_msgSender()][
+            _shoesId
+        ] -= requiredSpecialRepairDistance;
+        shoes[_shoesId].duration = shoesTypes[shoes[_shoesId].shoesTypeId]
+            .duration;
+    }
+
+    function repairShoe(uint256 _shoesId, uint256 _durationPoint) external {
+        if (
+            _durationPoint + shoes[_shoesId].duration >
+            shoesTypes[shoes[_shoesId].shoesTypeId].duration
+        ) {
+            uint256 repairDuration = shoesTypes[shoes[_shoesId].shoesTypeId]
+                .duration - shoes[_shoesId].duration;
+            uint256 repairCost = repairDuration * repairFee;
+            tokenVIE.transferFrom(_msgSender(), reserveAddress, repairCost);
+            shoes[_shoesId].duration = shoesTypes[shoes[_shoesId].shoesTypeId]
+                .duration;
+        } else {
+            uint256 repairCost = _durationPoint * repairFee;
+            tokenVIE.transferFrom(_msgSender(), reserveAddress, repairCost);
+            shoes[_shoesId].duration += _durationPoint;
+        }
     }
 }
