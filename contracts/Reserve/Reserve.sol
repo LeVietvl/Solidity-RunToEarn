@@ -9,7 +9,6 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract Reserve is Ownable {
     IERC20 public tokenVIE;
     address public shoesNFTAddress;
-    address public gemNFTAddress;
     address public tokenSaleAddress;
 
     constructor(address _tokenVIE) {
@@ -20,19 +19,13 @@ contract Reserve is Ownable {
         shoesNFTAddress = _shoesNFTAddress;
     }
 
-    function setGemNFTAddress(address _gemNFTAddress) external onlyOwner {
-        gemNFTAddress = _gemNFTAddress;
-    }
-
     function setTokenSaleAddress(address _tokenSaleAddress) external onlyOwner {
         tokenSaleAddress = _tokenSaleAddress;
     }
 
     function distributeToken(address _recipient, uint256 _amount) public {
         require(
-            msg.sender == shoesNFTAddress ||
-                msg.sender == gemNFTAddress ||
-                msg.sender == tokenSaleAddress
+            msg.sender == shoesNFTAddress || msg.sender == tokenSaleAddress
         );
         require(
             _amount <= tokenVIE.balanceOf(address(this)),

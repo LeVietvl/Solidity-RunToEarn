@@ -15,19 +15,28 @@ contract ShoesNFT is ERC721, Ownable {
     IERC20 public immutable tokenVIE;
     Reserve public immutable reserve;
     address public reserveAddress;
+    uint256 public repairFee;
+    uint256 public repairFeeDecimal;
+    uint256 public requiredSpecialRepairDistance;
 
-    constructor(address _tokenVIE, address _reserveAddress)
-        ERC721("ShoesNFT", "Shoes")
-    {
+    constructor(
+        address _tokenVIE,
+        address _reserveAddress,
+        uint256 _repairFee,
+        uint256 _repairFeeDecimal,
+        uint256 _requiredSpecialRepairDistance
+    ) ERC721("ShoesNFT", "Shoes") {
         tokenVIE = IERC20(_tokenVIE);
         reserve = Reserve(_reserveAddress);
         reserveAddress = _reserveAddress;
+        repairFee = _repairFee;
+        repairFeeDecimal = _repairFeeDecimal;
+        requiredSpecialRepairDistance = _requiredSpecialRepairDistance;
     }
 
     event ShoesType(
         uint256 shoesTypeId,
         uint256 price,
-        bytes32 indexed name,
         uint256 tokenEarn,
         uint256 duration,
         bool isOffline
@@ -36,7 +45,6 @@ contract ShoesNFT is ERC721, Ownable {
     struct ShoesInfo {
         uint256 shoesTypeId;
         uint256 price;
-        bytes32 name;
         uint256 tokenEarn;
         uint256 duration;
         bool isOffline;
@@ -47,14 +55,12 @@ contract ShoesNFT is ERC721, Ownable {
 
     function createShoesType(
         uint256 _price,
-        bytes32 _name,
         uint256 _tokenEarn,
         uint256 _duration
     ) external onlyOwner {
         ShoesInfo memory shoesType = ShoesInfo(
             _shoesTypeIdCount.current(),
             _price,
-            _name,
             _tokenEarn,
             _duration,
             false
@@ -65,7 +71,6 @@ contract ShoesNFT is ERC721, Ownable {
         emit ShoesType(
             _shoesTypeIdCount.current(),
             _price,
-            _name,
             _tokenEarn,
             _duration,
             false
@@ -103,7 +108,6 @@ contract ShoesNFT is ERC721, Ownable {
         ShoesInfo storage shoe = shoes[_shoesId];
         shoe.shoesTypeId = shoesType.shoesTypeId;
         shoe.price = shoesType.price;
-        shoe.name = shoesType.name;
         shoe.tokenEarn = shoesType.tokenEarn;
         shoe.duration = shoesType.duration;
         shoe.isOffline = shoesType.isOffline;
@@ -194,8 +198,6 @@ contract ShoesNFT is ERC721, Ownable {
         uint256 shoesId,
         uint256 repairFee
     );
-    uint256 public repairFee;
-    uint256 public requiredSpecialRepairDistance;
 
     function updateRepairFee(uint256 _repairFee) external onlyOwner {
         require(_repairFee >= 0, "RTE: bad repair fee");
@@ -241,12 +243,14 @@ contract ShoesNFT is ERC721, Ownable {
         ) {
             uint256 repairDuration = shoesTypes[shoes[_shoesId].shoesTypeId]
                 .duration - shoes[_shoesId].duration;
-            uint256 repairCost = repairDuration * repairFee;
+            uint256 repairCost = (repairDuration * repairFee) /
+                (10**repairFeeDecimal);
             tokenVIE.transferFrom(_msgSender(), reserveAddress, repairCost);
             shoes[_shoesId].duration = shoesTypes[shoes[_shoesId].shoesTypeId]
                 .duration;
         } else {
-            uint256 repairCost = _durationPoint * repairFee;
+            uint256 repairCost = (_durationPoint * repairFee) /
+                (10**repairFeeDecimal);
             tokenVIE.transferFrom(_msgSender(), reserveAddress, repairCost);
             shoes[_shoesId].duration += _durationPoint;
         }

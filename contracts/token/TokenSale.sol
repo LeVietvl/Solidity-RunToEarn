@@ -35,6 +35,8 @@ contract TokenSale is Ownable {
 
     //update rate
 
+    receive() external payable {}
+
     function updateRate(uint256 _rate) public onlyOwner {
         rate = _rate;
     }
