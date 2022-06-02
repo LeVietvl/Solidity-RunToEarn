@@ -21,7 +21,7 @@ describe("Run to Earn", function () {
     await reserve.deployed()
 
     const ShoesNFT = await ethers.getContractFactory("ShoesNFT");
-    shoesNFT = await ShoesNFT.deploy(vietvl.address, reserve.address, 1, 1, 3000)
+    shoesNFT = await ShoesNFT.deploy(vietvl.address, reserve.address, 1)
     await shoesNFT.deployed()
 
     await vietvl.transfer(reserve.address, ethers.utils.parseEther("10000"))
@@ -46,7 +46,7 @@ describe("Run to Earn", function () {
     });
     it("should create a new shoes type correctly", async function () {
       const shoesTypeTx = await shoesNFT.createShoesType(5000, 1, 2000)
-      await expect(shoesTypeTx).to.be.emit(shoesNFT, "ShoesType").withArgs(1, 5000, 1, 2000, false)
+      await expect(shoesTypeTx).to.be.emit(shoesNFT, "ShoesType").withArgs(0, 5000, 1, 2000, false)
     });
   })
 
@@ -239,4 +239,95 @@ describe("Run to Earn", function () {
       expect(await vietvl.balanceOf(runner1.address)).to.be.equal(ethers.utils.parseEther("10000").add(1000).sub(5000))
     });
   })
+
+  describe("update Required Special Repair Distance ", function () {
+    beforeEach(async () => {
+      await shoesNFT.createShoesType(5000, 1, 2000)
+      await shoesNFT.createShoesType(10000, 1, 8000)
+    })
+    it("should revert if shoesTypeId does not exist", async function () {
+      await expect(shoesNFT.updateRequiredSpecialRepairDistance(2, 10000)).to.be.revertedWith("RTE: shoesTypeId does not exist")
+    });
+    it("should revert if RequiredSpecialRepairDistance = 0", async function () {
+      await expect(shoesNFT.updateRequiredSpecialRepairDistance(0, 0)).to.be.revertedWith("RTE: bad required special repair distance")
+    });
+    it("should update correctly", async function () {
+      await shoesNFT.updateRequiredSpecialRepairDistance(0, 5000)
+      const requiredSpecialRepairDistanceTx = await shoesNFT.requiredSpecialRepairDistance(0)
+      expect(requiredSpecialRepairDistanceTx).to.be.equal(5000)
+    });
+  })
+
+  describe("claim Special Repair Promotion", function () {
+    beforeEach(async () => {
+      await shoesNFT.createShoesType(5000, 1, 2000)
+      await shoesNFT.createShoesType(10000, 1, 8000)
+      await shoesNFT.connect(runner1).buyShoes(0)
+      await shoesNFT.connect(runner2).buyShoes(0)
+      await shoesNFT.connect(runner3).buyShoes(1)
+      await shoesNFT.updateRequiredSpecialRepairDistance(0, 5000)
+    })
+    it("should revert if shoesID does not belong to the caller", async function () {
+      await expect(shoesNFT.connect(runner1).claimSpecialRepairPromo(2)).to.be.revertedWith("RTE: Not your shoes")
+    });
+    it("should revert if it is not enough distance to claim", async function () {
+      await expect(shoesNFT.connect(runner1).claimSpecialRepairPromo(1)).to.be.revertedWith("RTE: Not enough distance to claim")
+    });
+    it("should claim correctly", async function () {
+      await shoesNFT.connect(runner1).startRun(1)
+      await shoesNFT.connect(runner1).endRun(1, 2000)
+      await shoesNFT.connect(runner1).repairShoes(1, 2000)
+      await shoesNFT.connect(runner1).startRun(1)
+      await shoesNFT.connect(runner1).endRun(1, 2000)
+      await shoesNFT.connect(runner1).repairShoes(1, 2000)
+      await shoesNFT.connect(runner1).startRun(1)
+      await shoesNFT.connect(runner1).endRun(1, 2000)
+      await shoesNFT.connect(runner1).claimSpecialRepairPromo(1)
+
+      const specialRepairDistanceTx = await shoesNFT.specialRepairDistance(runner1.address, 1)
+      expect(specialRepairDistanceTx).to.be.equal(1000)
+      const shoesTx = await shoesNFT.shoes(1)
+      expect(shoesTx.duration).to.be.equal(2000)
+    });
+  })
+
+  describe("update Repair Fee", function () {
+    it("should revert if repair fee <= 0", async function () {
+      await expect(shoesNFT.updateRepairFee(0, 1)).to.be.revertedWith("RTE: bad repair fee")
+    });
+    it("should update Repair Fee correctly", async function () {
+      const repairFeeTx = await shoesNFT.updateRepairFee(5, 1)
+      await expect(repairFeeTx).to.be.emit(shoesNFT, "RepairFeeUpdate").withArgs(5, 1)
+    });
+  })
+
+  describe("repair shoes", function () {
+    beforeEach(async () => {
+      await shoesNFT.createShoesType(5000, 1, 2000)
+      await shoesNFT.createShoesType(10000, 1, 8000)
+      await shoesNFT.connect(runner1).buyShoes(0)
+      await shoesNFT.connect(runner2).buyShoes(0)
+      await shoesNFT.connect(runner1).startRun(1)
+      await shoesNFT.connect(runner1).endRun(1, 1500)
+      await shoesNFT.updateRepairFee(5, 1)
+    })
+    it("should revert if shoesID does not belong to the caller", async function () {
+      await expect(shoesNFT.connect(runner1).repairShoes(2, 3000)).to.be.revertedWith("RTE: Not your shoes")
+    });
+    it("should repair correctly when order point > necessary point ", async function () {
+      await shoesNFT.connect(runner1).repairShoes(1, 3000)
+      const repairCost = 1500 * 5 / 10
+      expect(await vietvl.balanceOf(runner1.address)).to.be.equal(ethers.utils.parseEther("10000").sub(5000).sub(repairCost))
+      const shoesTx = await shoesNFT.shoes(1)
+      expect(shoesTx.duration).to.be.equal(2000)
+    });
+    it("should repair correctly when order point <= necessary point ", async function () {
+      await shoesNFT.connect(runner1).repairShoes(1, 1000)
+      const repairCost = 1000 * 5 / 10
+      expect(await vietvl.balanceOf(runner1.address)).to.be.equal(ethers.utils.parseEther("10000").sub(5000).sub(repairCost))
+      const shoesTx = await shoesNFT.shoes(1)
+      expect(shoesTx.duration).to.be.equal(1500)
+    });
+  })
+
 })

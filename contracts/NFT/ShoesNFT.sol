@@ -17,21 +17,17 @@ contract ShoesNFT is ERC721, Ownable {
     address public reserveAddress;
     uint256 public repairFee;
     uint256 public repairFeeDecimal;
-    uint256 public requiredSpecialRepairDistance;
+    mapping(uint256 => uint256) public requiredSpecialRepairDistance;
 
     constructor(
         address _tokenVIE,
         address _reserveAddress,
-        uint256 _repairFee,
-        uint256 _repairFeeDecimal,
-        uint256 _requiredSpecialRepairDistance
+        uint256 _repairFee
     ) ERC721("ShoesNFT", "Shoes") {
         tokenVIE = IERC20(_tokenVIE);
         reserve = Reserve(_reserveAddress);
         reserveAddress = _reserveAddress;
         repairFee = _repairFee;
-        repairFeeDecimal = _repairFeeDecimal;
-        requiredSpecialRepairDistance = _requiredSpecialRepairDistance;
     }
 
     event ShoesType(
@@ -66,7 +62,6 @@ contract ShoesNFT is ERC721, Ownable {
             false
         );
         shoesTypes.push(shoesType);
-        _shoesTypeIdCount.increment();
 
         emit ShoesType(
             _shoesTypeIdCount.current(),
@@ -75,6 +70,8 @@ contract ShoesNFT is ERC721, Ownable {
             _duration,
             false
         );
+
+        _shoesTypeIdCount.increment();
     }
 
     function removeShoesType(uint256 _shoesTypeId) external onlyOwner {
@@ -193,50 +190,61 @@ contract ShoesNFT is ERC721, Ownable {
         );
     }
 
-    event RepairFeeUpdate(uint256 repairFee);
+    event RepairFeeUpdate(uint256 repairFee, uint256 repairFeeDecimal);
     event RequiredSpecialRepairDistanceUpdate(
         uint256 shoesId,
         uint256 repairFee
     );
 
-    function updateRepairFee(uint256 _repairFee) external onlyOwner {
-        require(_repairFee >= 0, "RTE: bad repair fee");
+    function updateRepairFee(uint256 _repairFee, uint256 _repairDecimal)
+        external
+        onlyOwner
+    {
+        require(_repairFee > 0, "RTE: bad repair fee");
         repairFee = _repairFee;
+        repairFeeDecimal = _repairDecimal;
 
-        emit RepairFeeUpdate(_repairFee);
+        emit RepairFeeUpdate(repairFee, repairFeeDecimal);
     }
 
     function updateRequiredSpecialRepairDistance(
-        uint256 _shoesId,
+        uint256 _shoesTypeId,
         uint256 _requiredSpecialRepairDistance
     ) external onlyOwner {
+        require(
+            _shoesTypeId < shoesTypes.length,
+            "RTE: shoesTypeId does not exist"
+        );
         require(
             _requiredSpecialRepairDistance > 0,
             "RTE: bad required special repair distance"
         );
-        requiredSpecialRepairDistance = _requiredSpecialRepairDistance;
+        requiredSpecialRepairDistance[
+            _shoesTypeId
+        ] = _requiredSpecialRepairDistance;
 
         emit RequiredSpecialRepairDistanceUpdate(
-            _shoesId,
+            _shoesTypeId,
             _requiredSpecialRepairDistance
         );
     }
 
     function claimSpecialRepairPromo(uint256 _shoesId) external {
+        uint256 _shoesTypeId = shoes[_shoesId].shoesTypeId;
         require(ownerOf(_shoesId) == _msgSender(), "RTE: Not your shoes");
         require(
             specialRepairDistance[_msgSender()][_shoesId] >=
-                requiredSpecialRepairDistance,
+                requiredSpecialRepairDistance[_shoesTypeId],
             "RTE: Not enough distance to claim"
         );
         specialRepairDistance[_msgSender()][
             _shoesId
-        ] -= requiredSpecialRepairDistance;
-        shoes[_shoesId].duration = shoesTypes[shoes[_shoesId].shoesTypeId]
-            .duration;
+        ] -= requiredSpecialRepairDistance[_shoesTypeId];
+        shoes[_shoesId].duration = shoesTypes[_shoesTypeId].duration;
     }
 
-    function repairShoe(uint256 _shoesId, uint256 _durationPoint) external {
+    function repairShoes(uint256 _shoesId, uint256 _durationPoint) external {
+        require(ownerOf(_shoesId) == _msgSender(), "RTE: Not your shoes");
         if (
             _durationPoint + shoes[_shoesId].duration >
             shoesTypes[shoes[_shoesId].shoesTypeId].duration
